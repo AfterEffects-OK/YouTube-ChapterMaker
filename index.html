@@ -43,6 +43,22 @@
         </div>
 
         <div class="mb-6">
+            <label for="apiKeyInput" class="block text-gray-700 text-sm font-bold mb-2">
+                Gemini APIキーをここに入力してください:
+            </label>
+            <input
+                type="password"
+                id="apiKeyInput"
+                class="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="ここにAPIキーを貼り付けます (例: AIzaSy...)"
+            >
+            <p class="text-sm text-gray-600 mt-2">
+                ※このAPIキーはブラウザ上でのみ使用され、外部に送信されることはありません。
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">Gemini APIキーの取得はこちら</a>
+            </p>
+        </div>
+
+        <div class="mb-6">
             <label for="transcriptInput" class="block text-gray-700 text-sm font-bold mb-2">
                 動画の文字起こしデータ (タイムスタンプを含むテキストをここに貼り付けてください):
             </label>
@@ -123,6 +139,7 @@
 
     <script>
         // DOM要素の取得
+        const apiKeyInput = document.getElementById('apiKeyInput'); // 新しいAPIキー入力欄
         const transcriptInput = document.getElementById('transcriptInput');
         const summarizeBtn = document.getElementById('summarizeBtn');
         const generateChaptersBtn = document.getElementById('generateChaptersBtn');
@@ -207,6 +224,12 @@
         async function callGeminiApi(prompt, type) {
             hideErrorMessage(); // Clear previous errors
             const transcript = transcriptInput.value.trim();
+            const apiKey = apiKeyInput.value.trim(); // APIキーを入力欄から取得
+
+            if (!apiKey) {
+                showErrorMessage('Gemini APIキーを入力してください。');
+                return;
+            }
             if (!transcript) {
                 showErrorMessage('文字起こしデータを入力してください。');
                 return;
@@ -220,8 +243,7 @@
                 }
             };
 
-            const apiKey = ""; // API key will be provided by the environment
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`; // APIキーを使用
 
             try {
                 const response = await fetch(apiUrl, {
@@ -353,13 +375,17 @@
         // 初期状態でボタンのdisabled状態を管理
         function updateButtonDisabledState() {
             const hasTranscript = transcriptInput.value.trim().length > 0;
-            summarizeBtn.disabled = !hasTranscript;
-            generateChaptersBtn.disabled = !hasTranscript;
-            generateDetailedSummaryBtn.disabled = !hasTranscript;
+            const hasApiKey = apiKeyInput.value.trim().length > 0;
+            const isReady = hasTranscript && hasApiKey;
+
+            summarizeBtn.disabled = !isReady;
+            generateChaptersBtn.disabled = !isReady;
+            generateDetailedSummaryBtn.disabled = !isReady;
         }
 
         // 入力時にボタンの状態を更新
         transcriptInput.addEventListener('input', updateButtonDisabledState);
+        apiKeyInput.addEventListener('input', updateButtonDisabledState); // APIキー入力時にも状態を更新
 
         // ページ読み込み時に初期状態を設定
         window.onload = () => {

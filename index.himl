@@ -1,0 +1,339 @@
+import React, { useState } from 'react';
+
+// Main App component
+const App = () => {
+    // State variables for transcript input, summary, chapters, detailed summary, and loading/error states
+    const [transcript, setTranscript] = useState('');
+    const [summary, setSummary] = useState('');
+    const [chapters, setChapters] = useState('');
+    const [detailedSummary, setDetailedSummary] = useState(''); // New state for detailed summary
+    const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+    const [isLoadingChapters, setIsLoadingChapters] = useState(false);
+    const [isLoadingDetailedSummary, setIsLoadingDetailedSummary] = useState(false); // New loading state
+    const [errorMessage, setErrorMessage] = useState('');
+    const [showSummaryCopied, setShowSummaryCopied] = useState(false);
+    const [showChaptersCopied, setShowChaptersCopied] = useState(false);
+    const [showDetailedSummaryCopied, setShowDetailedSummaryCopied] = useState(false); // New copied state
+
+    // Helper function to copy text to clipboard
+    const copyToClipboard = (text, type) => {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            if (type === 'summary') {
+                setShowSummaryCopied(true);
+                setTimeout(() => setShowSummaryCopied(false), 2000); // Hide "Copied!" after 2 seconds
+            } else if (type === 'chapters') {
+                setShowChaptersCopied(true);
+                setTimeout(() => setShowChaptersCopied(false), 2000); // Hide "Copied!" after 2 seconds
+            } else if (type === 'detailedSummary') {
+                setShowDetailedSummaryCopied(true);
+                setTimeout(() => setShowDetailedSummaryCopied(false), 2000); // Hide "Copied!" after 2 seconds
+            }
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+            setErrorMessage('テキストのコピーに失敗しました。手動でコピーしてください。');
+        }
+        document.body.removeChild(textarea);
+    };
+
+    // Helper function to call the Gemini API
+    const callGeminiApi = async (prompt, type) => {
+        setErrorMessage(''); // Clear previous errors
+        if (!transcript.trim()) {
+            setErrorMessage('文字起こしデータを入力してください。');
+            return;
+        }
+
+        const chatHistory = [];
+        chatHistory.push({ role: 'user', parts: [{ text: prompt }] });
+
+        const payload = {
+            contents: chatHistory,
+            generationConfig: {
+                // Ensure the response format is text for all outputs
+                responseMimeType: "text/plain"
+            }
+        };
+
+        const apiKey = ""; // API key will be provided by the environment
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            // Read the response text first, regardless of response.ok, for better debugging
+            const responseText = await response.text();
+            let result;
+
+            try {
+                // Attempt to parse the response text as JSON
+                result = JSON.parse(responseText);
+            } catch (jsonParseError) {
+                // If parsing fails, it's not valid JSON, or it's empty
+                console.error('API response was not valid JSON or was empty:', responseText, jsonParseError);
+                if (!response.ok) {
+                    // If response was not OK, it's a server error or malformed response
+                    throw new Error(`APIエラー: ${response.status} ${response.statusText} - ${responseText || '応答本文なし'}`);
+                } else {
+                    // If response was OK but not valid JSON, it's an unexpected format
+                    throw new Error('APIからの応答が予期せぬ形式です（空または不正なJSON）。');
+                }
+            }
+
+            if (!response.ok) {
+                // Handle non-OK responses after parsing, if possible
+                let specificErrorMessage = `APIエラー: ${response.status} ${response.statusText}`;
+                if (result && result.error && result.error.message) {
+                    specificErrorMessage += ` - ${result.error.message}`;
+                } else if (responseText) {
+                    specificErrorMessage += ` - ${responseText}`;
+                } else {
+                    specificErrorMessage += ` - 不明なエラー`;
+                }
+                throw new Error(specificErrorMessage);
+            }
+
+            // Check if result structure is as expected for a successful API call
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                const text = result.candidates[0].content.parts[0].text;
+                if (type === 'summary') {
+                    setSummary(text);
+                } else if (type === 'chapters') {
+                    setChapters(text);
+                } else if (type === 'detailedSummary') {
+                    setDetailedSummary(text);
+                }
+            } else {
+                console.warn('APIからの応答が期待された形式ではありませんでした。', result);
+                throw new Error('APIからの応答が期待された形式ではありませんでした。');
+            }
+        } catch (error) {
+            console.error('API呼び出し中にエラーが発生しました:', error);
+            setErrorMessage(`処理中にエラーが発生しました: ${error.message}`);
+        }
+    };
+
+    // Handler for summarizing the transcript
+    const handleSummarize = async () => {
+        setIsLoadingSummary(true);
+        // Modified prompt to generate report format with Markdown headings
+        const prompt = `以下の動画の文字起こしデータから、Googleドキュメントにコピーするのに適した、レポート形式で要約を作成してください。
+        要約は、主要な内容をまとめたセクションに分け、各セクションのタイトルにはMarkdownの見出し（例: ## イントロダクション）を使用してください。
+
+        例:
+        ## イントロダクション
+        この動画は、現代のテクノロジーが社会に与える影響について深く掘り下げています。
+
+        ## 主要なポイント
+        動画では、AIの進化が日常生活にどのような変化をもたらしているか、具体的な事例を挙げて解説しています。
+
+        ## 結論
+        今後の技術発展の方向性について考察し、視聴者へのメッセージで締めくくられています。
+
+        文字起こしデータ:\n\n${transcript}`;
+        await callGeminiApi(prompt, 'summary');
+        setIsLoadingSummary(false);
+    };
+
+    // Handler for generating chapter list from the transcript
+    const handleGenerateChapters = async () => {
+        setIsLoadingChapters(true);
+        // Instruct the model to extract and use timestamps if present in the format like "HH:MM:SS" or "M:SS"
+        // If not found, use a placeholder.
+        const prompt = `以下の動画の文字起こしデータから、主要なトピックに基づいてチャプターリストを作成してください。
+        文字起こしデータ内に「分:秒」または「時:分:秒」形式のタイムスタンプ（例: 0:05, 1:30, 01:23:45）がある場合は、それを各チャプターの先頭に含めてください。
+        YouTubeの説明欄に貼り付けやすいように、「タイムスタンプ - チャプタータイトル」のような形式で出力してください。
+        もし適切なタイムスタンプが見つからない場合は、「00:00 - 」のようなプレースホルダーを使用してください。
+
+        例:
+        0:05 - イントロダクション: 動画の概要と目的
+        1:30 - 主要なコンセプト: 重要な用語とアイデアの説明
+        5:45 - まとめ: 主要なポイントの要約と次のステップ
+
+        文字起こしデータ:\n\n${transcript}`;
+        await callGeminiApi(prompt, 'chapters');
+        setIsLoadingChapters(false);
+    };
+
+    // Handler for generating detailed summary with timestamps in report format with timestamps at sentence end
+    const handleGenerateDetailedSummary = async () => {
+        setIsLoadingDetailedSummary(true);
+        // Prompt for detailed summary in report format with timestamps at the end of relevant sentences/points
+        const prompt = `以下の動画の文字起こしデータから、Googleドキュメントにコピーするのに適した、タイムスタンプ付きの詳細な要約をレポート形式で作成してください。
+        レポートは、導入、主要な論点、結論などのセクションに分けて構成してください。
+        各セクションの重要なポイントとなる文章や情報の最後に、対応するタイムスタンプを **[分:秒]** または **[時:分:秒]** の形式で追加してください。
+        文字起こしデータ内に「分:秒」または「時:分:秒」形式のタイムスタンプ（例: 0:05, 1:30, 01:23:45）がある場合は、それを抽出して使用してください。
+        もし適切なタイムスタンプが見つからない、または特定の文章に正確なタイムスタンプを紐付けられない場合は、**[00:00]** のようなプレースホルダーを使用してください。
+        これらのタイムスタンプはプレースホルダーであり、Googleドキュメント内で手動で実際の動画の再生時間に変換し、リンクを作成する必要があります。
+
+        例:
+        ## 導入
+        このレポートでは、最新のAI技術の進化とその社会への影響について解説します[0:05]。特に、機械学習モデルの発展が、私たちの生活にどのような変化をもたらしているかに焦点を当てます[0:45]。
+
+        ## 主要な機能
+        AIの主要な機能の一つに、画像認識技術があります[2:15]。この技術は、監視システムや自動運転など、多岐にわたる分野で活用されています[3:00]。また、自然言語処理の進化により、チャットボットや翻訳サービスの精度も飛躍的に向上しました[4:30]。
+
+        ## 課題と解決策
+        AIの導入には、プライバシーの問題や倫理的な課題も伴います[5:30]。これらの課題に対しては、データ匿名化技術の向上や、AI倫理ガイドラインの策定が進められています[6:10]。
+
+        ## 今後の展望
+        将来的には、AIがさらに多くの産業で中心的な役割を果たすことが予想されます[10:00]。特に、医療分野や環境問題解決への貢献が期待されています[10:45]。
+
+        文字起こしデータ:\n\n${transcript}`;
+        await callGeminiApi(prompt, 'detailedSummary');
+        setIsLoadingDetailedSummary(false);
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-100 p-4 sm:p-8 flex items-center justify-center font-inter">
+            <div className="bg-white p-6 sm:p-8 rounded-lg shadow-xl w-full max-w-4xl border border-gray-200">
+                <h1 className="text-3xl font-bold text-center text-gray-800 mb-6 flex items-center justify-center gap-2">
+                    {/* Updated YouTube Play Button SVG Icon: Rounded Rectangle */}
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="#FF0000"
+                        className="w-10 h-10 sm:w-12 sm:h-12"
+                    >
+                        {/* Red rounded rectangle for YouTube icon background */}
+                        <path d="M21.9 6.44C21.72 5.86 21.28 5.41 20.7 5.23C19.34 4.8 12 4.8 12 4.8S4.66 4.8 3.3 5.23C2.72 5.41 2.28 5.86 2.1 6.44C1.67 7.8 1.67 12 1.67 12S1.67 16.2 2.1 17.56C2.28 18.14 2.72 18.59 3.3 18.77C4.66 19.2 12 19.2 12 19.2S19.34 19.2 20.7 18.77C21.28 18.59 21.72 18.14 21.9 17.56C22.33 16.2 22.33 12 22.33 12S22.33 7.8 21.9 6.44Z"/>
+                        {/* White play triangle */}
+                        <path fill="#FFFFFF" d="M9.5 15.5V8.5L15.5 12L9.5 15.5Z"/>
+                    </svg>
+                    YouTubeチャプター＆要約メーカー
+                </h1>
+
+                {errorMessage && (
+                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                        <strong className="font-bold">エラー: </strong>
+                        <span className="block sm:inline">{errorMessage}</span>
+                    </div>
+                )}
+
+                <div className="mb-6">
+                    <label htmlFor="transcript" className="block text-gray-700 text-sm font-bold mb-2">
+                        動画の文字起こしデータ (タイムスタンプを含むテキストをここに貼り付けてください):
+                    </label>
+                    <textarea
+                        id="transcript"
+                        className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 h-48 sm:h-64 resize-y"
+                        placeholder="例: YouTubeの文字起こし機能を有効にしてコピーしたテキストなど。タイムスタンプが含まれていることを確認してください（例: 0:05 こんにちは、...）"
+                        value={transcript}
+                        onChange={(e) => setTranscript(e.target.value)}
+                    ></textarea>
+                </div>
+
+                <div className="flex flex-col sm:flex-row justify-center gap-4 mb-8">
+                    {/* チャプターリストを作成 ボタンを先に配置 */}
+                    <button
+                        onClick={handleGenerateChapters}
+                        disabled={isLoadingSummary || isLoadingChapters || isLoadingDetailedSummary || !transcript.trim()}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                        {isLoadingChapters ? (
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        ) : 'チャプターリストを作成'}
+                    </button>
+                    {/* 文字起こしを要約 ボタンを次に配置 */}
+                    <button
+                        onClick={handleSummarize}
+                        disabled={isLoadingSummary || isLoadingChapters || isLoadingDetailedSummary || !transcript.trim()}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                        {isLoadingSummary ? (
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        ) : '文字起こしを要約'}
+                    </button>
+                    <button
+                        onClick={handleGenerateDetailedSummary}
+                        disabled={isLoadingSummary || isLoadingChapters || isLoadingDetailedSummary || !transcript.trim()}
+                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                        {isLoadingDetailedSummary ? (
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        ) : 'タイムスタンプ付き詳細要約'}
+                    </button>
+                </div>
+
+                {/* 表示順を変更: Chapters -> Summary -> Detailed Summary */}
+                {chapters && (
+                    <div className="mt-8 bg-green-50 p-6 rounded-lg border border-green-200 shadow-sm">
+                        <div className="flex justify-between items-center mb-4 sticky top-0 bg-green-50 z-10 p-2 -m-2 rounded-t-lg"> {/* Added sticky header */}
+                            <h2 className="text-xl font-bold text-green-800">チャプターリスト</h2>
+                            <button
+                                onClick={() => copyToClipboard(chapters, 'chapters')}
+                                className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-sm shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+                            >
+                                {showChaptersCopied ? 'コピーしました！' : 'コピー'}
+                            </button>
+                        </div>
+                        <div className="whitespace-pre-wrap text-gray-800 leading-relaxed max-h-96 overflow-y-auto pt-2"> {/* Added max-height and overflow-y-auto, and padding-top */}
+                            {chapters}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-4">
+                            ※タイムスタンプは入力された文字起こしデータから抽出されたものです。正確なタイムスタンプが取得できなかった場合は、プレースホルダーが使用されます。
+                        </p>
+                    </div>
+                )}
+
+                {summary && (
+                    <div className="mt-8 bg-blue-50 p-6 rounded-lg border border-blue-200 shadow-sm">
+                        <div className="flex justify-between items-center mb-4 sticky top-0 bg-blue-50 z-10 p-2 -m-2 rounded-t-lg"> {/* Added sticky header */}
+                            <h2 className="text-xl font-bold text-blue-800">レポート形式の要約</h2>
+                            <button
+                                onClick={() => copyToClipboard(summary, 'summary')}
+                                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg text-sm shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+                            >
+                                {showSummaryCopied ? 'コピーしました！' : 'コピー'}
+                            </button>
+                        </div>
+                        <div className="whitespace-pre-wrap text-gray-800 leading-relaxed max-h-96 overflow-y-auto pt-2"> {/* Added max-height and overflow-y-auto, and padding-top to prevent text hiding under sticky header */}
+                            {summary}
+                        </div>
+                    </div>
+                )}
+
+                {detailedSummary && (
+                    <div className="mt-8 bg-purple-50 p-6 rounded-lg border border-purple-200 shadow-sm">
+                        <div className="flex justify-between items-center mb-4 sticky top-0 bg-purple-50 z-10 p-2 -m-2 rounded-t-lg"> {/* Added sticky header */}
+                            <h2 className="text-xl font-bold text-purple-800">タイムスタンプ付き詳細要約 (レポート形式)</h2>
+                            <button
+                                onClick={() => copyToClipboard(detailedSummary, 'detailedSummary')}
+                                className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg text-sm shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+                            >
+                                {showDetailedSummaryCopied ? 'コピーしました！' : 'コピー'}
+                            </button>
+                        </div>
+                        <div className="whitespace-pre-wrap text-gray-800 leading-relaxed max-h-96 overflow-y-auto pt-2"> {/* Added max-height and overflow-y-auto, and padding-top */}
+                            {detailedSummary}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-4">
+                            ※上記のタイムスタンプは入力された文字起こしデータから抽出されたものです。Googleドキュメントに貼り付けた後、ご自身で動画のURLと結合してリンクを作成してください。正確なタイムスタンプが取得できなかった場合は、プレースホルダーが使用されます。
+                        </p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default App;

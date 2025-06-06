@@ -77,7 +77,7 @@
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 </span>
-                チャプターリストを作成
+                <span class="button-text">チャプターリストを作成</span>
             </button>
             <button id="summarizeBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center">
                 <span id="summaryLoadingSpinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden">
@@ -86,7 +86,7 @@
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 </span>
-                文字起こしを要約
+                <span class="button-text">文字起こしを要約</span>
             </button>
             <button id="generateDetailedSummaryBtn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center">
                 <span id="detailedSummaryLoadingSpinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden">
@@ -95,7 +95,7 @@
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 </span>
-                タイムスタンプ付き詳細要約
+                <span class="button-text">タイムスタンプ付き詳細要約</span>
             </button>
         </div>
 
@@ -178,15 +178,15 @@
         }
 
         // ヘルパー関数: ボタンとスピナーの状態を管理
-        function setButtonState(button, spinner, isLoading, originalText) {
+        function setButtonState(button, spinner, isLoading) {
+            const buttonText = button.querySelector('.button-text');
             button.disabled = isLoading;
             if (isLoading) {
                 spinner.classList.remove('hidden');
-                button.classList.add('disabled:opacity-50', 'disabled:cursor-not-allowed');
+                if (buttonText) buttonText.classList.add('hidden');
             } else {
                 spinner.classList.add('hidden');
-                button.classList.remove('disabled:opacity-50', 'disabled:cursor-not-allowed');
-                button.querySelector('span').textContent = originalText; // Ensure text resets after loading
+                if (buttonText) buttonText.classList.remove('hidden');
             }
         }
 
@@ -302,7 +302,7 @@
 
         // イベントハンドラー: 文字起こしを要約
         summarizeBtn.addEventListener('click', async () => {
-            setButtonState(summarizeBtn, summaryLoadingSpinner, true, '文字起こしを要約');
+            setButtonState(summarizeBtn, summaryLoadingSpinner, true);
             const prompt = `以下の動画の文字起こしデータから、Googleドキュメントにコピーするのに適した、レポート形式で要約を作成してください。
             要約は、主要な内容をまとめたセクションに分け、各セクションのタイトルにはMarkdownの見出し（例: ## イントロダクション）を使用してください。
 
@@ -318,12 +318,12 @@
 
             文字起こしデータ:\n\n${transcriptInput.value}`;
             await callGeminiApi(prompt, 'summary');
-            setButtonState(summarizeBtn, summaryLoadingSpinner, false, '文字起こしを要約');
+            setButtonState(summarizeBtn, summaryLoadingSpinner, false);
         });
 
         // イベントハンドラー: チャプターリストを作成
         generateChaptersBtn.addEventListener('click', async () => {
-            setButtonState(generateChaptersBtn, chaptersLoadingSpinner, true, 'チャプターリストを作成');
+            setButtonState(generateChaptersBtn, chaptersLoadingSpinner, true);
             const prompt = `以下の動画の文字起こしデータから、主要なトピックに基づいてチャプターリストを作成してください。
             文字起こしデータ内に「分:秒」または「時:分:秒」形式のタイムスタンプ（例: 0:05, 1:30, 01:23:45）がある場合は、それを各チャプターの先頭に含めてください。
             YouTubeの説明欄に貼り付けやすいように、「タイムスタンプ - チャプタータイトル」のような形式で出力してください。
@@ -336,12 +336,12 @@
 
             文字起こしデータ:\n\n${transcriptInput.value}`;
             await callGeminiApi(prompt, 'chapters');
-            setButtonState(generateChaptersBtn, chaptersLoadingSpinner, false, 'チャプターリストを作成');
+            setButtonState(generateChaptersBtn, chaptersLoadingSpinner, false);
         });
 
         // イベントハンドラー: タイムスタンプ付き詳細要約
         generateDetailedSummaryBtn.addEventListener('click', async () => {
-            setButtonState(generateDetailedSummaryBtn, detailedSummaryLoadingSpinner, true, 'タイムスタンプ付き詳細要約');
+            setButtonState(generateDetailedSummaryBtn, detailedSummaryLoadingSpinner, true);
             const prompt = `以下の動画の文字起こしデータから、Googleドキュメントにコピーするのに適した、タイムスタンプ付きの詳細な要約をレポート形式で作成してください。
             レポートは、導入、主要な論点、結論などのセクションに分けて構成してください。
             各セクションの重要なポイントとなる文章や情報の最後に、対応するタイムスタンプを **[分:秒]** または **[時:分:秒]** の形式で追加してください。
@@ -364,7 +364,7 @@
 
             文字起こしデータ:\n\n${transcriptInput.value}`;
             await callGeminiApi(prompt, 'detailedSummary');
-            setButtonState(generateDetailedSummaryBtn, detailedSummaryLoadingSpinner, false, 'タイムスタンプ付き詳細要約');
+            setButtonState(generateDetailedSummaryBtn, detailedSummaryLoadingSpinner, false);
         });
 
         // コピーボタンのイベントリスナー
